@@ -1,18 +1,17 @@
 import { Context } from 'hono';
-import { HttpException } from '../exceptions';
-import { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
+import { HTTPException } from 'hono/http-exception';
 
 export const errorHandler = async (err: Error, c: Context) => {
-  let message = 'Internal server error';
-  let statusCode = 500;
-  let stack = null;
-
-  console.log(err);
-
-  if (err instanceof HttpException) {
-    message = err.message;
-    statusCode = err.statusCode;
+  if (err instanceof HTTPException) {
+    c.status(err.status);
+    return c.json({
+      success: false,
+      error: {
+        message: err.message,
+        details: err.stack,
+      },
+    });
   } else if (err instanceof ZodError) {
     const groupedErrors = err.issues.reduce((acc, issue) => {
       const field = issue.path[0];
@@ -25,22 +24,27 @@ export const errorHandler = async (err: Error, c: Context) => {
       return acc;
     }, {} as Record<string, string[]>);
 
-    message = 'Validation error';
-    statusCode = 400;
-    stack = Object.entries(groupedErrors).map(([field, messages]) => ({
+    const details = Object.entries(groupedErrors).map(([field, messages]) => ({
       field,
       messages,
     }));
-  }
 
-  return c.json(
-    {
+    c.status(400);
+    return c.json({
       success: false,
       error: {
-        message,
-        details: stack || err.stack,
+        message: 'Validation error',
+        details,
       },
+    });
+  }
+
+  c.status(500);
+  return c.json({
+    success: false,
+    error: {
+      message: 'Internal server error',
+      details: err.stack,
     },
-    statusCode as ContentfulStatusCode
-  );
+  });
 };
